@@ -10,11 +10,16 @@ import (
 func main() {
 	//target := "http://www.baidu.com"
 	if len(os.Args) < 2 {
-		fmt.Println("used: go run . <website>")
+		fmt.Println("用法：go run . <网址1> [网址2 ...]")
 		return
 	}
-	target := os.Args[1]
+	for _, target := range os.Args[1:] {
+		checkWebsite(target)
+	}
 
+}
+
+func checkWebsite(target string) {
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 	}
@@ -25,7 +30,7 @@ func main() {
 
 	if err != nil {
 		fmt.Printf("检查失败：%s\n原因：%v\n", target, err)
-		os.Exit(1)
+		return
 	}
 	defer resp.Body.Close()
 

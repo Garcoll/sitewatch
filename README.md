@@ -6,7 +6,8 @@
 
 ## 当前功能
 
-- 从命令行读取一个网址
+- 从命令行读取一个或多个网址，按顺序检查
+- 单个网址请求失败后，继续检查后续网址
 - 显示 HTTP 状态码
 - 显示从发起请求到收到响应头的耗时
 - 设置 5 秒请求超时
@@ -34,6 +35,13 @@ website: https://www.baidu.com
 HTTP status: 200
 response headers received in: 88.0655ms
 ```
+go run . https://www.baidu.com https://github.com
+website: https://www.baidu.com
+HTTP status: 200
+response headers received in: 172.1859ms
+website: https://github.com
+HTTP status: 200
+response headers received in: 656.0185ms
 
 不提供网址时：
 
@@ -45,7 +53,7 @@ go run .
 
 ## 当前限制
 
-- 每次只检查一个网址
+- 目前按顺序检查，前一个请求结束后才会开始下一个
 - 只执行一次检查，不会定时重复
 - 不保存历史结果
 - 收到 HTTP 响应不代表网站业务功能完全正常
