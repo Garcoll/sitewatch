@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,17 +18,36 @@ type CheckResult struct {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("用法：go run . <网址1> [网址2 ...]")
+	var concurrency int
+	var timeout time.Duration
+
+	flag.IntVar(&concurrency, "concurrency", 3, "最多同时检查的网址数量")
+	flag.DurationVar(&timeout, "timeout", 5*time.Second, "每个请求的超时时间，例如 500ms、3s")
+	flag.Parse()
+
+	if concurrency < 1 {
+		fmt.Fprintln(os.Stderr, "参数错误: -concurrency 必须大于0")
+		os.Exit(2)
+	}
+
+	if timeout <= 0 {
+		fmt.Fprintln(os.Stderr, "参数错误：-timeout 必须大于 0,例如 500ms、3s")
+		os.Exit(2)
+	}
+
+	targets := flag.Args()
+
+	if len(targets) == 0 {
+		fmt.Println("used: go run . [-concurrency count]<web1>[web2...]")
 		return
 	}
 
 	client := &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: timeout,
 	}
 
 	batchStart := time.Now()
-	results := checkWebsites(client, os.Args[1:], 3)
+	results := checkWebsites(client, targets, concurrency)
 	batchDuration := time.Since(batchStart)
 
 	normal := 0
