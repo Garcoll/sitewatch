@@ -5,16 +5,23 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"sync"
 	"time"
 )
 
 // CheckResult 保存一次检查的结果。
 type CheckResult struct {
+	Index      int
 	URL        string
 	StatusCode int
 	Duration   time.Duration
 	Err        error
+}
+
+type Checkjob struct {
+	Index  int
+	Target string
 }
 
 func main() {
@@ -123,7 +130,7 @@ func checkWebsites(
 		concurrency = len(targets)
 	}
 
-	jobs := make(chan string)
+	jobs := make(chan Checkjob)
 	results := make(chan CheckResult)
 
 	var wg sync.WaitGroup
@@ -134,16 +141,21 @@ func checkWebsites(
 		go func() {
 			defer wg.Done()
 
-			for target := range jobs {
-				results <- checkWebsite(client, target)
+			for job := range jobs {
+				result := checkWebsite(client, job.Target)
+				result.Index = job.Index
+				results <- result
 			}
 		}()
 	}
 
 	// 独立发送任务，让调用方可以同时接收结果。
 	go func() {
-		for _, target := range targets {
-			jobs <- target
+		for index, target := range targets {
+			jobs <- Checkjob{
+				Index:  index,
+				Target: target,
+			}
 		}
 		close(jobs)
 	}()
@@ -158,6 +170,10 @@ func checkWebsites(
 	for result := range results {
 		collected = append(collected, result)
 	}
+
+	sort.Slice(collected, func(i, j int) bool {
+		return collected[i].Index < collected[j].Index
+	})
 
 	return collected
 }
