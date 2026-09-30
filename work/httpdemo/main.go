@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 )
 
@@ -42,6 +43,23 @@ func (s *TargetStore) createTarget(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "url 和 name 都不能为空", http.StatusBadRequest)
 		return
 	}
+
+	parsedURL, err := url.Parse(input.URL)
+	if err != nil {
+		http.Error(w, "url 格式不正确", http.StatusBadRequest)
+		return
+	}
+
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		http.Error(w, "url 必须使用 http 或 https", http.StatusBadRequest)
+		return
+	}
+
+	if parsedURL.Hostname() == "" {
+		http.Error(w, "url 必须包含主机名", http.StatusBadRequest)
+		return
+	}
+
 	s.mu.Lock()
 
 	target := Target{
