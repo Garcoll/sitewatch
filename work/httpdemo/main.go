@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
+
+	"example.com/sitewatch/internal/checker"
 )
 
 type Target struct {
@@ -20,12 +23,51 @@ type TargetStore struct {
 	targets []Target
 }
 
-func (s *TargetStore) getTargets(w http.ResponseWriter, r *http.Request) {
+type CheckResponse struct {
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	URL        string `json:"url"`
+	StatusCode int    `json:"status_code"`
+	DurationMS int64  `json:"duration_ms"`
+	Error      string `json:"error,omitempty"`
+}
+
+func main() {
+	store := &TargetStore{
+		nextID: 3,
+		targets: []Target{
+			{ID: 1, URL: "https://www.baidu.com", Name: "百度首页"},
+			{ID: 2, URL: "https://github.com", Name: "GitHub 首页"},
+		},
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /hello", hello)
+	mux.HandleFunc("GET /targets", store.getTargets)
+	mux.HandleFunc("POST /targets", store.createTarget)
+	mux.HandleFunc("POST /checks", store.checkTargets)
+
+	fmt.Println("监听地址：127.0.0.1:8081")
+
+	if err := http.ListenAndServe("127.0.0.1:8081", mux); err != nil {
+		fmt.Println("服务停止：", err)
+	}
+}
+
+func (s *TargetStore) snapshotTargets() []Target {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	snapshot := make([]Target, len(s.targets))
+	copy(snapshot, s.targets)
+	return snapshot
+}
+
+func (s *TargetStore) getTargets(w http.ResponseWriter, r *http.Request) {
+	targets := s.snapshotTargets()
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.targets)
+	json.NewEncoder(w).Encode(targets)
 }
 
 func (s *TargetStore) createTarget(w http.ResponseWriter, r *http.Request) {
@@ -85,23 +127,34 @@ func hello(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Hello from Sitewatch")
 }
 
-func main() {
-	store := &TargetStore{
-		nextID: 3,
-		targets: []Target{
-			{ID: 1, URL: "https://www.baidu.com", Name: "百度首页"},
-			{ID: 2, URL: "https://github.com", Name: "GitHub 首页"},
-		},
+func (s *TargetStore) checkTargets(w http.ResponseWriter, r *http.Request) {
+	targets := s.snapshotTargets()
+
+	urls := make([]string, len(targets))
+	for i, target := range targets {
+		urls[i] = target.URL
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /hello", hello)
-	mux.HandleFunc("GET /targets", store.getTargets)
-	mux.HandleFunc("POST /targets", store.createTarget)
-
-	fmt.Println("监听地址：127.0.0.1:8081")
-
-	if err := http.ListenAndServe("127.0.0.1:8081", mux); err != nil {
-		fmt.Println("服务停止：", err)
+	client := &http.Client{
+		Timeout: 5 * time.Second,
 	}
+	results := checker.CheckWebsites(client, urls, 3)
+
+	responses := make([]CheckResponse, len(results))
+	for i, result := range results {
+		response := CheckResponse{
+			ID:         targets[i].ID,
+			Name:       targets[i].Name,
+			URL:        result.URL,
+			StatusCode: result.StatusCode,
+			DurationMS: result.Duration.Milliseconds(),
+		}
+		if result.Err != nil {
+			response.Error = result.Err.Error()
+		}
+		responses[i] = response
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(responses)
 }

@@ -42,6 +42,47 @@ go run . https://www.baidu.com https://github.com https://go.dev
 
 网址需要包含 `http://` 或 `https://`。
 
+## HTTP 实验服务
+
+从项目根目录启动：
+
+```powershell
+go run ./work/httpdemo
+```
+
+服务监听 `127.0.0.1:8081`。保持该终端运行，在另一个终端操作。
+
+### 添加目标
+
+```powershell
+$body = '{"url":"http://127.0.0.1:8081/hello","name":"local-hello"}'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8081/targets -ContentType "application/json" -Body $body
+```
+
+### 查询目标
+
+```powershell
+curl.exe -sS http://127.0.0.1:8081/targets
+```
+
+### 触发检查
+
+```powershell
+curl.exe -sS -i -X POST http://127.0.0.1:8081/checks
+```
+
+接口检查请求开始时的目标快照，等待整批完成后返回 JSON。
+结果按目标快照的顺序排列，包含目标 ID、名称、URL、状态码和毫秒耗时。
+
+- 单次目标请求超时为 5 秒，每批最多并发检查 3 个目标。
+- 收到 HTTP 4xx 或 5xx 响应时，记录实际状态码。
+- 请求失败时，`status_code` 为 0，`error` 包含错误信息。
+- 没有请求错误时，省略 `error` 字段。
+- 目标保存在内存中，重启后恢复初始列表；检查历史暂不保存。
+- 并发限制作用于每一批检查，尚未限制多批检查的总并发数。
+
+命令行入口与 HTTP 实验共用 `internal/checker` 中的检查逻辑。
+
 ## 命令行参数
 
 ### `-concurrency`

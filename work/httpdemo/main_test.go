@@ -172,3 +172,183 @@ func TestCreateTargetRejectsInvalidInput(t *testing.T) {
 		})
 	}
 }
+
+func TestSnapshotTargetsIndependent(t *testing.T) {
+	original := Target{
+		ID:   1,
+		URL:  "https://go.dev",
+		Name: "Go 官网",
+	}
+	store := &TargetStore{
+		nextID:  2,
+		targets: []Target{original},
+	}
+
+	snapshot := store.snapshotTargets()
+
+	// 先确认复制到了正确的数据，再访问下标。
+	if len(snapshot) != 1 {
+		t.Fatalf("预期快照长度为 1，实际为 %d", len(snapshot))
+	}
+	if snapshot[0] != original {
+		t.Fatalf("快照内容不正确：%+v", snapshot[0])
+	}
+
+	// 修改原列表，快照应该保持不变。
+	store.mu.Lock()
+	store.targets[0].Name = "原列表的新名称"
+	store.mu.Unlock()
+
+	if snapshot[0].Name != original.Name {
+		t.Errorf("修改原列表影响了快照：%q", snapshot[0].Name)
+	}
+
+	// 修改快照，原列表也应该保持不变。
+	snapshot[0].URL = "https://example.com"
+
+	if store.targets[0].URL != original.URL {
+		t.Errorf("修改快照影响了原列表：%q", store.targets[0].URL)
+	}
+}
+
+func TestCheckTargets(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer targetServer.Close()
+
+	store := &TargetStore{
+		nextID: 2,
+		targets: []Target{
+			{
+				ID:   1,
+				URL:  targetServer.URL,
+				Name: "测试目标",
+			},
+		},
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/checks", nil)
+	response := httptest.NewRecorder()
+
+	store.checkTargets(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("预期状态码 200，实际为 %d", response.Code)
+	}
+
+	var results []CheckResponse
+	if err := json.NewDecoder(response.Body).Decode(&results); err != nil {
+		t.Fatalf("解析检查结果失败：%v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("预期 1 条检查结果，实际为 %d", len(results))
+	}
+
+	result := results[0]
+
+	if result.ID != 1 {
+		t.Errorf("预期目标 ID 为 1，实际为 %d", result.ID)
+	}
+	if result.Name != "测试目标" {
+		t.Errorf("预期目标名称为 %q，实际为 %q", "测试目标", result.Name)
+	}
+	if result.StatusCode != http.StatusTeapot {
+		t.Errorf("预期状态码为 %d，实际为 %d", http.StatusTeapot, result.StatusCode)
+	}
+	if result.Error != "" {
+		t.Errorf("HTTP 响应成功到达时不应有请求错误，实际为 %q", result.Error)
+	}
+}
+
+func TestCheckTargetsReturnsHTTPStatus(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer targetServer.Close()
+
+	store := &TargetStore{
+		nextID: 2,
+		targets: []Target{
+			{
+				ID:   1,
+				URL:  targetServer.URL,
+				Name: "测试目标",
+			},
+		},
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/checks", nil)
+	response := httptest.NewRecorder()
+
+	store.checkTargets(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("预期状态码 200，实际为 %d", response.Code)
+	}
+
+	var results []CheckResponse
+	if err := json.NewDecoder(response.Body).Decode(&results); err != nil {
+		t.Fatalf("解析检查结果失败：%v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("预期 1 条结果，实际为 %d", len(results))
+	}
+
+	result := results[0]
+
+	if result.ID != 1 {
+		t.Errorf("预期目标 ID 为 1，实际为 %d", result.ID)
+	}
+	if result.Name != "测试目标" {
+		t.Errorf("预期目标名称为 %q，实际为 %q", "测试目标", result.Name)
+	}
+	if result.StatusCode != http.StatusTeapot {
+		t.Errorf("预期状态码为 %d，实际为 %d", http.StatusTeapot, result.StatusCode)
+	}
+	if result.Error != "" {
+		t.Errorf("HTTP 响应成功到达时不应有请求错误，实际为 %q", result.Error)
+	}
+}
+
+func TestCheckTargetsReturnsRequestError(t *testing.T) {
+	store := &TargetStore{
+		nextID: 2,
+		targets: []Target{
+			{
+				ID:   1,
+				URL:  "http://127.0.0.1:1",
+				Name: "不可连接目标",
+			},
+		},
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/checks", nil)
+	response := httptest.NewRecorder()
+
+	store.checkTargets(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("预期状态码 200，实际为 %d", response.Code)
+	}
+
+	var results []CheckResponse
+	if err := json.NewDecoder(response.Body).Decode(&results); err != nil {
+		t.Fatalf("解析检查结果失败：%v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("预期 1 条结果，实际为 %d", len(results))
+	}
+
+	result := results[0]
+
+	if result.StatusCode != 0 {
+		t.Errorf("请求失败时预期状态码为 0，实际为 %d", result.StatusCode)
+	}
+	if result.Error == "" {
+		t.Fatal("请求失败时预期 error 字段有内容")
+	}
+}

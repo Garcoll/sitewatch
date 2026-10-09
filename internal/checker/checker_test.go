@@ -1,4 +1,4 @@
-package main
+package checker
 
 import (
 	"errors"
@@ -28,7 +28,7 @@ func TestCheckWebsiteStatusCode(t *testing.T) {
 				Timeout: time.Second,
 			}
 
-			result := checkWebsite(client, server.URL)
+			result := CheckWebsite(client, server.URL)
 
 			if result.Err != nil {
 				t.Fatalf("预期收到 HTTP 响应，实际请求失败：%v", result.Err)
@@ -66,7 +66,7 @@ func TestCheckWebsiteTimeout(t *testing.T) {
 		Timeout: 100 * time.Millisecond,
 	}
 
-	result := checkWebsite(client, server.URL)
+	result := CheckWebsite(client, server.URL)
 
 	if result.Err == nil {
 		t.Fatal("预期请求超时，实际没有返回错误")
@@ -102,7 +102,7 @@ func TestCheckWebsitesPreservesInputOrder(t *testing.T) {
 	// This guarantees that results arrive out of input order without sleeps.
 	targets := []string{server.URL + "/slow", server.URL + "/fast", server.URL + "/release"}
 	client := &http.Client{Timeout: 5 * time.Second}
-	results := checkWebsites(client, targets, 2)
+	results := CheckWebsites(client, targets, 2)
 
 	if len(results) != len(targets) {
 		t.Fatalf("expected %d results, got %d", len(targets), len(results))
@@ -177,7 +177,7 @@ func TestCheckWebsitesConcurrencyLimit(t *testing.T) {
 	// 4. 后台运行检查，主流程继续负责等待和放行。
 	done := make(chan []CheckResult, 1)
 	go func() {
-		done <- checkWebsites(client, targets, concurrency)
+		done <- CheckWebsites(client, targets, concurrency)
 	}()
 
 	// 5. 等待两个请求进入服务端。

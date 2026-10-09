@@ -5,24 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"sort"
-	"sync"
 	"time"
+
+	"example.com/sitewatch/internal/checker"
 )
-
-// CheckResult 保存一次检查的结果。
-type CheckResult struct {
-	Index      int
-	URL        string
-	StatusCode int
-	Duration   time.Duration
-	Err        error
-}
-
-type Checkjob struct {
-	Index  int
-	Target string
-}
 
 func main() {
 	var concurrency int
@@ -54,7 +40,7 @@ func main() {
 	}
 
 	batchStart := time.Now()
-	results := checkWebsites(client, targets, concurrency)
+	results := checker.CheckWebsites(client, targets, concurrency)
 	batchDuration := time.Since(batchStart)
 
 	normal := 0
@@ -92,88 +78,4 @@ func main() {
 	)
 
 	fmt.Printf("整批检查耗时：%v\n", batchDuration)
-}
-
-func checkWebsite(client *http.Client, target string) CheckResult {
-	start := time.Now()
-	resp, err := client.Get(target)
-	duration := time.Since(start)
-
-	if err != nil {
-		return CheckResult{
-			URL:      target,
-			Duration: duration,
-			Err:      err,
-		}
-	}
-	defer resp.Body.Close()
-
-	return CheckResult{
-		URL:        target,
-		StatusCode: resp.StatusCode,
-		Duration:   duration,
-	}
-}
-
-func checkWebsites(
-	client *http.Client,
-	targets []string,
-	concurrency int,
-) []CheckResult {
-	if len(targets) == 0 {
-		return nil
-	}
-	if concurrency < 1 {
-		concurrency = 1
-	}
-	if concurrency > len(targets) {
-		concurrency = len(targets)
-	}
-
-	jobs := make(chan Checkjob)
-	results := make(chan CheckResult)
-
-	var wg sync.WaitGroup
-
-	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			for job := range jobs {
-				result := checkWebsite(client, job.Target)
-				result.Index = job.Index
-				results <- result
-			}
-		}()
-	}
-
-	// 独立发送任务，让调用方可以同时接收结果。
-	go func() {
-		for index, target := range targets {
-			jobs <- Checkjob{
-				Index:  index,
-				Target: target,
-			}
-		}
-		close(jobs)
-	}()
-
-	// 所有 worker 停止发送后，才能关闭结果通道。
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	collected := make([]CheckResult, 0, len(targets))
-	for result := range results {
-		collected = append(collected, result)
-	}
-
-	sort.Slice(collected, func(i, j int) bool {
-		return collected[i].Index < collected[j].Index
-	})
-
-	return collected
 }
