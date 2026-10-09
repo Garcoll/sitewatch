@@ -18,9 +18,11 @@ type Target struct {
 }
 
 type TargetStore struct {
-	mu      sync.Mutex
-	nextID  int
-	targets []Target
+	mu          sync.Mutex
+	nextID      int
+	targets     []Target
+	httpClient  *http.Client
+	concurrency int
 }
 
 type CheckResponse struct {
@@ -39,6 +41,10 @@ func main() {
 			{ID: 1, URL: "https://www.baidu.com", Name: "百度首页"},
 			{ID: 2, URL: "https://github.com", Name: "GitHub 首页"},
 		},
+		httpClient: &http.Client{
+			Timeout: 5 * time.Second,
+		},
+		concurrency: 3,
 	}
 
 	mux := http.NewServeMux()
@@ -135,10 +141,11 @@ func (s *TargetStore) checkTargets(w http.ResponseWriter, r *http.Request) {
 		urls[i] = target.URL
 	}
 
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-	results := checker.CheckWebsites(client, urls, 3)
+	results := checker.CheckWebsites(
+		s.httpClient,
+		urls,
+		s.concurrency,
+	)
 
 	responses := make([]CheckResponse, len(results))
 	for i, result := range results {

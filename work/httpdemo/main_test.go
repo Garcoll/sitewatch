@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCreateTargetValidation(t *testing.T) {
@@ -211,57 +212,6 @@ func TestSnapshotTargetsIndependent(t *testing.T) {
 	}
 }
 
-func TestCheckTargets(t *testing.T) {
-	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusTeapot)
-	}))
-	defer targetServer.Close()
-
-	store := &TargetStore{
-		nextID: 2,
-		targets: []Target{
-			{
-				ID:   1,
-				URL:  targetServer.URL,
-				Name: "测试目标",
-			},
-		},
-	}
-
-	request := httptest.NewRequest(http.MethodPost, "/checks", nil)
-	response := httptest.NewRecorder()
-
-	store.checkTargets(response, request)
-
-	if response.Code != http.StatusOK {
-		t.Fatalf("预期状态码 200，实际为 %d", response.Code)
-	}
-
-	var results []CheckResponse
-	if err := json.NewDecoder(response.Body).Decode(&results); err != nil {
-		t.Fatalf("解析检查结果失败：%v", err)
-	}
-
-	if len(results) != 1 {
-		t.Fatalf("预期 1 条检查结果，实际为 %d", len(results))
-	}
-
-	result := results[0]
-
-	if result.ID != 1 {
-		t.Errorf("预期目标 ID 为 1，实际为 %d", result.ID)
-	}
-	if result.Name != "测试目标" {
-		t.Errorf("预期目标名称为 %q，实际为 %q", "测试目标", result.Name)
-	}
-	if result.StatusCode != http.StatusTeapot {
-		t.Errorf("预期状态码为 %d，实际为 %d", http.StatusTeapot, result.StatusCode)
-	}
-	if result.Error != "" {
-		t.Errorf("HTTP 响应成功到达时不应有请求错误，实际为 %q", result.Error)
-	}
-}
-
 func TestCheckTargetsReturnsHTTPStatus(t *testing.T) {
 	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
@@ -277,6 +227,8 @@ func TestCheckTargetsReturnsHTTPStatus(t *testing.T) {
 				Name: "测试目标",
 			},
 		},
+		httpClient:  &http.Client{Timeout: time.Second},
+		concurrency: 1,
 	}
 
 	request := httptest.NewRequest(http.MethodPost, "/checks", nil)
@@ -323,6 +275,8 @@ func TestCheckTargetsReturnsRequestError(t *testing.T) {
 				Name: "不可连接目标",
 			},
 		},
+		httpClient:  &http.Client{Timeout: time.Second},
+		concurrency: 1,
 	}
 
 	request := httptest.NewRequest(http.MethodPost, "/checks", nil)
